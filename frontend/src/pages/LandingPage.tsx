@@ -14,6 +14,7 @@ import SettingsIcon      from "@mui/icons-material/Settings";
 import WavingHandIcon    from "@mui/icons-material/WavingHand";
 import HubIcon           from "@mui/icons-material/Hub";
 
+// In production VITE_API_BASE="" so we use relative path — same origin
 const API = import.meta.env.VITE_API_BASE ?? "";
 
 const GOOGLE_SVG = (

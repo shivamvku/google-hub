@@ -33,7 +33,10 @@ interface Props { onConfigured: () => void; }
 
 const GC          = "https://console.cloud.google.com";
 const ALL_APIS    = "drive.googleapis.com,gmail.googleapis.com,calendar-json.googleapis.com,sheets.googleapis.com,docs.googleapis.com,youtube.googleapis.com";
-const REDIRECT_URI = `${import.meta.env.VITE_API_BASE ?? ""}/auth/callback`;
+// In production VITE_API_BASE is "" so we use window.location.origin for the full URL
+const REDIRECT_URI = import.meta.env.VITE_API_BASE
+  ? `${import.meta.env.VITE_API_BASE}/auth/callback`
+  : `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback`;
 
 const API_CHIPS = [
   { Icon: FolderIcon,        name: "Drive"    },

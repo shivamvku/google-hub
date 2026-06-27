@@ -13,7 +13,7 @@ import json
 import tempfile
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
@@ -117,12 +117,13 @@ def update_urls(payload: UrlsPayload, db: Session = Depends(get_db)):
 
 @router.post("/parse-json")
 async def parse_client_secrets(
-    file: UploadFile = File(...),
-    db:   Session    = Depends(get_db),
+    request:  Request,
+    file:     UploadFile = File(...),
+    db:       Session    = Depends(get_db),
 ):
     """
     Parse a downloaded client_secret_*.json file from Google Cloud Console.
-    Extracts client_id and client_secret automatically — no copy-paste needed.
+    Auto-detects the redirect URI from the incoming request origin.
     """
     try:
         raw  = await file.read()
@@ -130,7 +131,6 @@ async def parse_client_secrets(
     except Exception:
         raise HTTPException(400, "Invalid JSON file")
 
-    # Google downloads come in two shapes: {"web": {...}} or {"installed": {...}}
     inner = data.get("web") or data.get("installed")
     if not inner:
         raise HTTPException(
@@ -145,41 +145,38 @@ async def parse_client_secrets(
     if not client_id or not client_secret:
         raise HTTPException(400, "client_id or client_secret missing from JSON")
 
-    # Check redirect URI — must include our callback
+    # Auto-detect the correct redirect URI from the request origin
+    origin       = request.headers.get("origin", "").rstrip("/")
+    our_uri      = f"{origin}/auth/callback" if origin else "http://localhost:8001/auth/callback"
+    cors_origin  = origin or "http://localhost:5174"
+
     redirect_uris = inner.get("redirect_uris", [])
-    our_uri       = "http://localhost:8001/auth/callback"
+    mismatch_warning = None
     if redirect_uris and our_uri not in redirect_uris:
-        log.warning(
-            "redirect_uri_mismatch",
-            extra={"found": redirect_uris, "expected": our_uri},
-        )
-        # Don't hard-fail — warn in the response so user can fix in Console
+        log.warning("redirect_uri_mismatch", extra={"found": redirect_uris, "expected": our_uri})
         mismatch_warning = (
-            f"⚠️ The redirect URI '{our_uri}' was not found in the downloaded file "
+            f"The redirect URI '{our_uri}' was not found in the downloaded file "
             f"({redirect_uris}). Add it in Google Cloud Console → Credentials → Edit client."
         )
-    else:
-        mismatch_warning = None
 
-    # Save to DB
     try:
         cfg = save_config(
             db,
             client_id     = client_id,
             client_secret = client_secret,
             redirect_uri  = our_uri,
+            cors_origin   = cors_origin,
         )
     except Exception as e:
         log.error("setup_parse_json_save_failed", extra={"error": str(e)})
         raise HTTPException(500, f"Failed to save: {e}")
 
-    log.info("app_configured_via_json", extra={"client_id": client_id[:12] + "..."})
-
+    log.info("app_configured_via_json", extra={"client_id": client_id[:12] + "...", "redirect_uri": our_uri})
     return {
-        "status":      "saved",
-        "client_id":   client_id,
+        "status":       "saved",
+        "client_id":    client_id,
         "redirect_uri": cfg.redirect_uri,
-        "warning":     mismatch_warning,
+        "warning":      mismatch_warning,
     }
 
 
