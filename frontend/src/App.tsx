@@ -24,7 +24,7 @@ import LandingPage  from "./pages/LandingPage";
 import FirstRunPage from "./pages/FirstRunPage";
 import SetupPage, { type PreflightResult } from "./pages/SetupPage";
 
-const API = import.meta.env.VITE_API_BASE || "http://localhost:8001";
+const API = import.meta.env.VITE_API_BASE ?? "";
 
 interface User { email: string; name: string; picture: string; }
 interface AuthError { error: string; message: string; }

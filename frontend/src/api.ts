@@ -9,9 +9,12 @@
 import axios, { AxiosError } from "axios";
 
 const api = axios.create({
-  baseURL:         import.meta.env.VITE_API_BASE || "http://localhost:8001",
+  // In production both frontend and backend are on the same origin,
+  // so baseURL is "" (relative). In local dev VITE_API_BASE=http://localhost:8001.
+  // Use ?? instead of || so an intentional empty string isn't overridden.
+  baseURL:         import.meta.env.VITE_API_BASE ?? "",
   withCredentials: true,
-  timeout:         15_000,   // 15 s — preflight can take a moment
+  timeout:         15_000,
 });
 
 // Paths that are allowed to receive a 401 without triggering a logout redirect

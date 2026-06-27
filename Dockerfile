@@ -24,8 +24,9 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
 # Copy source and build
-# VITE_API_BASE is empty so the frontend uses relative paths (/auth/login etc.)
-# which work because both are served from the same origin in production.
+# VITE_API_BASE="" means the frontend uses relative paths (/auth/login etc.)
+# which resolve to the same origin — correct for production single-container deploy.
+# Local dev uses frontend/.env which sets VITE_API_BASE=http://localhost:8001
 COPY frontend/ ./
 RUN VITE_API_BASE="" npm run build
 

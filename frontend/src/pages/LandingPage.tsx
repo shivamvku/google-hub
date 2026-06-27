@@ -14,7 +14,7 @@ import SettingsIcon      from "@mui/icons-material/Settings";
 import WavingHandIcon    from "@mui/icons-material/WavingHand";
 import HubIcon           from "@mui/icons-material/Hub";
 
-const API = import.meta.env.VITE_API_BASE || "http://localhost:8001";
+const API = import.meta.env.VITE_API_BASE ?? "";
 
 const GOOGLE_SVG = (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true" style={{ flexShrink: 0 }}>
