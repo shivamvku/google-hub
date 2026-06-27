@@ -24,7 +24,7 @@ git init
 git add .
 git commit -m "chore: initial commit"
 git branch -M main
-git remote add origin https://github.com/shivamvkoud/google-hub.git
+git remote add origin https://github.com/shivamvku/google-hub.git
 git push -u origin main
 ```
 
@@ -32,7 +32,7 @@ git push -u origin main
 
 1. Go to [render.com](https://render.com) → New → Web Service
 2. Choose **Deploy an existing image from a registry**
-3. Image URL: `ghcr.io/shivamvkoud/google-hub:latest`
+3. Image URL: `ghcr.io/shivamvku/google-hub:latest`
 4. Set environment variables in Render dashboard:
 
 | Variable | Value |
@@ -80,8 +80,8 @@ git push main
     ├─ Job 1: CI — TypeScript check + Python syntax check
     │
     ├─ Job 2: Build Docker image → push to ghcr.io (on CI pass)
-    │         ghcr.io/shivamvkoud/google-hub:latest
-    │         ghcr.io/shivamvkoud/google-hub:sha-<commit>
+    │         ghcr.io/shivamvku/google-hub:latest
+    │         ghcr.io/shivamvku/google-hub:sha-<commit>
     │
     └─ Job 3: Trigger Render Deploy Hook → health check /health
 ```
