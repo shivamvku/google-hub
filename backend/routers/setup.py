@@ -1,12 +1,13 @@
 """
 /setup — first-run configuration wizard.
 
-GET  /setup/status          → is the app configured?
-POST /setup/save            → save credentials (manual entry or JSON upload)
-PUT  /setup/save            → update credentials
-POST /setup/parse-json      → parse a downloaded client_secrets JSON file
-GET  /setup/automate        → SSE stream: create GCP project + enable APIs
-POST /setup/automate/auth   → upload a management credentials JSON to unlock automation
+GET   /setup/status          → is the app configured?
+POST  /setup/save            → save credentials (manual entry or JSON upload)
+PUT   /setup/save            → update credentials
+PATCH /setup/urls            → update redirect_uri + cors_origin only (no secrets needed)
+POST  /setup/parse-json      → parse a downloaded client_secrets JSON file
+GET   /setup/automate        → SSE stream: create GCP project + enable APIs
+POST  /setup/automate/auth   → upload a management credentials JSON to unlock automation
 """
 import json
 import tempfile
@@ -91,6 +92,27 @@ def setup_save(payload: SetupPayload, db: Session = Depends(get_db)):
 
     log.info("app_configured", extra={"redirect_uri": cfg.redirect_uri})
     return {"status": "saved", "redirect_uri": cfg.redirect_uri}
+
+
+class UrlsPayload(BaseModel):
+    redirect_uri: str
+    cors_origin:  str
+
+
+@router.patch("/urls")
+def update_urls(payload: UrlsPayload, db: Session = Depends(get_db)):
+    """
+    Update redirect_uri and cors_origin without touching credentials.
+    Useful after deploying to a new domain.
+    """
+    cfg = get_config(db)
+    if cfg is None:
+        raise HTTPException(404, "App not configured yet — run setup first")
+    cfg.redirect_uri = payload.redirect_uri.strip()
+    cfg.cors_origin  = payload.cors_origin.strip()
+    db.commit()
+    log.info("urls_updated", extra={"redirect_uri": cfg.redirect_uri, "cors_origin": cfg.cors_origin})
+    return {"status": "updated", "redirect_uri": cfg.redirect_uri, "cors_origin": cfg.cors_origin}
 
 
 @router.post("/parse-json")
