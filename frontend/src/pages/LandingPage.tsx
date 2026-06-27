@@ -13,7 +13,6 @@ import ArrowForwardIcon  from "@mui/icons-material/ArrowForward";
 import SettingsIcon      from "@mui/icons-material/Settings";
 import WavingHandIcon    from "@mui/icons-material/WavingHand";
 import HubIcon           from "@mui/icons-material/Hub";
-import CheckCircleIcon   from "@mui/icons-material/CheckCircle";
 
 const API = import.meta.env.VITE_API_BASE || "http://localhost:8001";
 

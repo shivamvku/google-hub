@@ -45,7 +45,6 @@ function AuthErrorPage({ err, onRetry, onSetup }: {
   err: AuthError; onRetry: () => void; onSetup: () => void;
 }) {
   const isAccessDenied = err.error === "access_denied";
-  const projectParam   = ""; // user knows their project
 
   return (
     <div className="wiz-page">
