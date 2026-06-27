@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: google-hub
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon
+    plan: free
+
+    # Render pulls the repo and builds the Docker image on every deploy
+    autoDeploy: false   # CI/CD pipeline controls deploys via deploy hook
+
+    # Persistent disk for SQLite — survives redeploys
+    disk:
+      name: google-hub-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: PORT
+        value: "8001"
+      - key: DB_FILE
+        value: /data/google_hub.db
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: none
+      # Set these in Render dashboard after first deploy (they contain secrets)
+      # CORS_ORIGIN = https://your-app.onrender.com  (same as service URL)
+      - key: CORS_ORIGIN
+        sync: false   # prompts you to fill this in Render dashboard

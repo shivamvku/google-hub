@@ -126,28 +126,23 @@ jobs:
     environment: production         # requires manual approval if configured
 
     steps:
-      - name: Trigger Render Deploy Hook
+      - name: Install Render CLI
+        run: npm install -g @render-com/cli@latest
+
+      - name: Deploy service and wait
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           echo "Triggering Render deployment..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "${{ secrets.RENDER_DEPLOY_HOOK }}")
-          echo "Render response: $STATUS"
-          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
-            echo "Deploy hook returned HTTP $STATUS — check Render dashboard"
-            exit 1
-          fi
-          echo "Deployment triggered successfully"
+          render deploys create ${{ secrets.RENDER_SERVICE_ID }} \
+            --wait \
+            --output json
 
-      - name: Wait for Render health check
+      - name: Health check
         run: |
-          echo "Waiting 60 s for Render to start the new instance..."
-          sleep 60
+          echo "Running health check..."
+          sleep 15
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "${{ secrets.RENDER_APP_URL }}/health" || echo "000")
-          echo "Health check status: $STATUS"
-          if [ "$STATUS" = "200" ]; then
-            echo "✅ App is healthy"
-          else
-            echo "⚠️  Health check returned $STATUS — check Render logs"
-            # Non-fatal: Render may still be starting
-          fi
+          echo "Health: $STATUS"
+          [ "$STATUS" = "200" ] && echo "✅ Healthy" || echo "⚠️  Check Render logs"
