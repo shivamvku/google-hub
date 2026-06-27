@@ -122,27 +122,53 @@ jobs:
   deploy:
     name: Deploy to Render
     runs-on: ubuntu-latest
-    needs: build-push               # only runs after image is pushed
-    environment: production         # requires manual approval if configured
+    needs: build-push
+    environment: production
 
     steps:
-      - name: Install Render CLI
-        run: npm install -g @render-com/cli@latest
-
-      - name: Deploy service and wait
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Trigger deploy via Render API
         run: |
-          echo "Triggering Render deployment..."
-          render deploys create ${{ secrets.RENDER_SERVICE_ID }} \
-            --wait \
-            --output json
+          echo "Triggering Render deployment for service ${{ secrets.RENDER_SERVICE_ID }}..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          STATUS=$(echo "$RESPONSE" | tail -n 1)
+          echo "HTTP status: $STATUS"
+          echo "Response: $BODY"
+          if [ "$STATUS" != "201" ]; then
+            echo "❌ Deploy trigger failed with HTTP $STATUS"
+            exit 1
+          fi
+          DEPLOY_ID=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
+          echo "Deploy ID: $DEPLOY_ID"
+          echo "DEPLOY_ID=$DEPLOY_ID" >> $GITHUB_ENV
+
+      - name: Wait for deploy to complete
+        run: |
+          echo "Polling deploy status..."
+          for i in $(seq 1 30); do
+            sleep 15
+            STATUS=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys/${{ env.DEPLOY_ID }}" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','unknown'))" 2>/dev/null || echo "unknown")
+            echo "Attempt $i/30 — deploy status: $STATUS"
+            if [ "$STATUS" = "live" ]; then
+              echo "✅ Deploy is live!"
+              exit 0
+            elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "canceled" ]; then
+              echo "❌ Deploy $STATUS"
+              exit 1
+            fi
+          done
+          echo "⚠️ Timed out waiting — check Render dashboard"
 
       - name: Health check
         run: |
-          echo "Running health check..."
-          sleep 15
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "${{ secrets.RENDER_APP_URL }}/health" || echo "000")
           echo "Health: $STATUS"
-          [ "$STATUS" = "200" ] && echo "✅ Healthy" || echo "⚠️  Check Render logs"
+          [ "$STATUS" = "200" ] && echo "✅ App is healthy" || echo "⚠️ Got $STATUS — may still be starting"
