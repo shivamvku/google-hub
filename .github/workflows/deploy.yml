@@ -1,0 +1,153 @@
+name: CI/CD → Build, Push, Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]    # CI only on PRs — no deploy
+
+# Least-privilege: only the token permissions we actually need
+permissions:
+  contents: read
+  packages: write       # push to ghcr.io
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/google-hub
+
+jobs:
+  # ── Job 1: Lint & type-check ─────────────────────────────────────────────
+  ci:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Frontend ──────────────────────────────────────────────────────────
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: TypeScript type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Vite build (smoke test)
+        working-directory: frontend
+        env:
+          VITE_API_BASE: ""
+        run: npm run build
+
+      # ── Backend ───────────────────────────────────────────────────────────
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Backend syntax check
+        run: |
+          python -m py_compile backend/db.py
+          python -m py_compile backend/auth.py
+          python -m py_compile backend/logger.py
+          python -m py_compile backend/gcp_setup.py
+          python -m py_compile backend/main.py
+          python -m py_compile backend/routers/drive.py
+          python -m py_compile backend/routers/gmail.py
+          python -m py_compile backend/routers/calendar.py
+          python -m py_compile backend/routers/sheets.py
+          python -m py_compile backend/routers/docs.py
+          python -m py_compile backend/routers/youtube.py
+          python -m py_compile backend/routers/preflight.py
+          python -m py_compile backend/routers/setup.py
+
+  # ── Job 2: Build & Push Docker image ─────────────────────────────────────
+  build-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    needs: ci                       # only runs if CI passes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=true
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers in GitHub Actions cache for faster rebuilds
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+  # ── Job 3: Deploy to Render ───────────────────────────────────────────────
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: build-push               # only runs after image is pushed
+    environment: production         # requires manual approval if configured
+
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: |
+          echo "Triggering Render deployment..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          echo "Render response: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
+            echo "Deploy hook returned HTTP $STATUS — check Render dashboard"
+            exit 1
+          fi
+          echo "Deployment triggered successfully"
+
+      - name: Wait for Render health check
+        run: |
+          echo "Waiting 60 s for Render to start the new instance..."
+          sleep 60
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.RENDER_APP_URL }}/health" || echo "000")
+          echo "Health check status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ App is healthy"
+          else
+            echo "⚠️  Health check returned $STATUS — check Render logs"
+            # Non-fatal: Render may still be starting
+          fi
