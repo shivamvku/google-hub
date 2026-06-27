@@ -133,6 +133,7 @@ jobs:
             -X POST \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
+            -d '{}' \
             "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys")
           BODY=$(echo "$RESPONSE" | head -n -1)
           STATUS=$(echo "$RESPONSE" | tail -n 1)
