@@ -1,11 +1,10 @@
 """
-Database setup — SQLite via SQLAlchemy (sync).
+Database setup — SQLAlchemy ORM.
 
-Tables:
-  app_config   — Single-row table: Google OAuth credentials + auto-generated crypto keys.
-                 Written once via the first-run setup wizard. No .env needed by users.
-  users        — Google profile, one row per Google account.
-  user_tokens  — Fernet-encrypted OAuth token JSON, one row per user.
+Local dev  : SQLite  (DB_FILE env var, default google_hub.db)
+Production : Postgres (DATABASE_URL env var, set by Render automatically)
+
+SQLAlchemy handles both transparently — same models, same queries.
 """
 import os
 import secrets
@@ -15,11 +14,21 @@ from cryptography.fernet import Fernet
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship, Session
 
-DB_PATH      = Path(os.getenv("DB_FILE", "google_hub.db"))
-engine       = create_engine(
-    f"sqlite:///{DB_PATH}",
-    connect_args={"check_same_thread": False},
-)
+# ── Connection string ──────────────────────────────────────────────────────────
+# Render injects DATABASE_URL as postgres://... but SQLAlchemy needs postgresql://
+_RAW_URL = os.getenv("DATABASE_URL", "")
+
+if _RAW_URL:
+    # Fix Render's legacy postgres:// scheme
+    DATABASE_URL = _RAW_URL.replace("postgres://", "postgresql://", 1)
+    _CONNECT_ARGS = {}
+else:
+    # Local dev: SQLite
+    DB_PATH      = Path(os.getenv("DB_FILE", "google_hub.db"))
+    DATABASE_URL = f"sqlite:///{DB_PATH}"
+    _CONNECT_ARGS = {"check_same_thread": False}
+
+engine       = create_engine(DATABASE_URL, connect_args=_CONNECT_ARGS)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
@@ -31,18 +40,18 @@ class Base(DeclarativeBase):
 
 class AppConfig(Base):
     """
-    Stores the app's runtime secrets in the DB so users never need a .env file.
-    There is always exactly one row (id = 'singleton').
+    Singleton config row — stores OAuth credentials + auto-generated crypto keys.
+    No .env required from users; saved via the first-run setup wizard.
     """
     __tablename__ = "app_config"
 
     id              = Column(String, primary_key=True, default="singleton")
-    client_id       = Column(String, nullable=False)        # Google OAuth Client ID
-    client_secret   = Column(String, nullable=False)        # Google OAuth Client Secret
+    client_id       = Column(String, nullable=False)
+    client_secret   = Column(String, nullable=False)
     redirect_uri    = Column(String, nullable=False,
                              default="http://localhost:8001/auth/callback")
-    jwt_secret      = Column(String, nullable=False)        # auto-generated on first save
-    encryption_key  = Column(String, nullable=False)        # Fernet key, auto-generated
+    jwt_secret      = Column(String, nullable=False)
+    encryption_key  = Column(String, nullable=False)
     cors_origin     = Column(String, nullable=False,
                              default="http://localhost:5174")
     created_at      = Column(DateTime, server_default=func.now())
@@ -89,7 +98,6 @@ def get_db():
 
 
 def get_config(db: Session) -> AppConfig | None:
-    """Return the singleton config row, or None if not yet configured."""
     return db.get(AppConfig, "singleton")
 
 
@@ -101,12 +109,11 @@ def save_config(
     cors_origin: str  = "http://localhost:5174",
 ) -> AppConfig:
     """
-    Create or update the app config row.
-    JWT secret and Fernet encryption key are auto-generated if not already present.
+    Create or update the singleton config row.
+    Crypto keys are auto-generated on first save and preserved on updates.
     """
     existing = db.get(AppConfig, "singleton")
 
-    # Preserve existing crypto keys on update so old sessions stay valid
     jwt_secret     = existing.jwt_secret     if existing else secrets.token_hex(32)
     encryption_key = existing.encryption_key if existing else Fernet.generate_key().decode()
 
